@@ -1,0 +1,20 @@
+{
+    "notifications": [
+        {
+            "id": "createIncident",
+            "description": "Create PagerDuty Incident.",
+            "action": "command",
+            "enabled": false,
+            "guid": "B4F091A8-F4C0-4C9D-A7A9-AF3AED2BD6C1",
+            "action_timeout": 60,
+            "delay_seconds": 0,
+            "repeat_seconds": 0,
+            "send_initial_occurrence": true,
+            "send_clear": false,
+            "body_format": "python ${here/dmd/ZenPackManager/packs/ZenPacks.community.PagerDuty/path}/libexec/zenpagerduty.py -a create -z ${dev/zPDZenossServer} -u ${dev/zPDZenossUser} -p ${dev/zPDZenossPass} -H ${dev/zPDDomain} -T ${dev/zPDToken} -U ${dev/zPDUser} -e ${evt/evid} -S ${evt/pdServiceKey}",
+            "clear_body_format": "",
+            "subscriptions": []
+        }
+    ]
+}
+
