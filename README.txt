@@ -1,164 +1,114 @@
-# ZenPack Template
-This README describes the structure of the ZenPack template that gets
-automatically created by Zenoss when you add a ZenPack through the web
-interface.
+AUTHOR: 
 
-## Files
-At the top-level a ZenPack must have a setup.py. Almost always a MANIFEST.in
-file should exist, and in cases where external dependencies must be built for
-inclusion in the ZenPack, a GNUmakefile. Examples of these files with inline
-comments are included in this template.
+Joseph Anderson
 
-Also included in the ZenPackTemplate is a configure.zcml. As more of Zenoss'
-extensibility moves to using ZCA (Zope Component Architecture) this file
-becomes crucial to hooking into various aspects of Zenoss.
+DESCRIPTION:
 
-## Files and Subdirectories
-The following sections describe the purpose and use for each of the default
-subdirectories. Note that if the described functionality is not of use in your
-ZenPack it is safe to remove any of the default directories.
+This ZenPack is designed to facilitate a tight integration between Zenoss (www.zenoss.com) and Pagerduty (www.pagerduty.com). It 
+provides the following capabilities:
 
-### src/
-The src/ top-level directory in ZenPacks is the conventional place to add
-third-party dependencies to your ZenPack. It should only be used as a staging
-area to do any build work necessary for the dependency.
+	1.  A script designed to be run by Zenoss "Event Commands" (3.x) or "Notifications" (4.x) that creates Pagerduty incidents for specific Zenoss events.
+		a.  incident is created for Pagerduty service by specifying the service key as a runtime argument.
+		b.  if Pagerduty service is in maintenance, the Zenoss event will be acknowledged and updated with a relevant message
+		c.  if Pagerduty service is disabled, the Zenoss event will be left unacknowledged, but updated with a relevant message
+	2.  A Zenoss daemon that runs periodically and synchronizes Zenoss event/Pagerduty incidents.  The daemon:
+		a.  determines which side (Zenoss or Pagerduty) was most recently updated.
+		b.  changes the status of the non-authoritative event/incident to match the authoritative one
+		c.  copies/formats Pagerduty incident logs for view within the Zenoss event console details.
 
-See GNUmakefile (or GNUmakefile.example) for examples of how to have
-your third-party dependencies automatically compiled and installed at the right
-time and into the right location.
+This ZenPack uses the web service APIs of both Zenoss and PagerDuty.
 
-### ZenPacks/NAMESPACE/PACKNAME/
-The following sections describe the directories contained within the
-namespaced ZenPacks/NAMESPACE/PACKNAME/ subdirectories.
+CREATING PAGERDUTY INCIDENTS:
 
-#### bin/
-Any general tools delivered by your ZenPack that would be used by the Zenoss
-administrator at the command line should go into this directory by convention.
-When the ZenPack is installed all files in this directory will be made
-executable.
+Since Pagerduty uses a key to identify the "Services" that notifications should be assigned to, the idea is to create a default service key event attribute (via transform)
+that Zenoss will use when creating Pagerduty Incidents.  The default service key can then be overwritten by other event transforms according to the administrator's needs. 
 
-#### browser/
-The browser subdirectory should contain all code and configuration that's
-specific to the Zenoss web interface. The provided configure.zcml will
-automatically load the example browser/configure.zcml and register the
-browser/resources/ subdirectory to serve static web content.
+For example, the following event transform might be applied at the root of the event class hierarchy.  
+This transform determines whether a given device is a Windows or Unix device, and assigns the appropriate service key accordingly:
 
-#### daemons/
-All files in the daemons/ subdirectory get special handling. Upon installing
-the ZenPack, the following actions will occur.
+####################
+unixServiceKey = 'UNIXKEY' # Unix Team
+windowsServiceKey = 'WINDOWSKEY' # Windows Team
+defaultServiceKey = 'DEFAULTKEY' # Default Team
+try:
+	devClass = device.deviceClass().getOrganizerName() # string representing device class organizer
+	if 'Linux' in devClass:
+		evt.pdServiceKey = unixServiceKey
+	elif 'AIX' in devClass:
+		evt.pdServiceKey = unixServiceKey
+	elif 'WMI' in devClass:
+		evt.pdServiceKey = windowsServiceKey
+	elif 'Windows' in devClass:
+		evt.pdServiceKey = windowsServiceKey
+	else:
+		evt.pdServiceKey = device.zPDServiceKey
+except: # set to default if nothing found
+	evt.pdServiceKey = defaultServiceKey
+####################
+This initial transform can then be overridden later by other event transforms depending on the event class (or whatever the administrator designs).
+Once the event has a corresponsing service key assigned, it can be passed as a parameter to an "Event Command" (Zenoss 3.x) or "Notification" (Zenoss 4.x) such as:
 
-    1. The file will be made executable (chmod 0755)
-    2. A symlink to the file will be created in $ZENHOME/bin/
-    3. An configuration file will be generated at $ZENHOME/etc/DAEMON_NAME.conf
 
-Assuming that you don't have a $ZENHOME/etc/DAEMONS_TXT_ONLY file this daemon
-will also become part of the normal zenoss start and stop processes.
+python zenpagerduty.py -a create -z ${dev/zPDZenossServer} -u ${dev/zPDZenossUser} -p ${dev/zPDZenossPass} -H ${dev/zPDDomain} -T ${dev/zPDToken} -U ${dev/zPDUser} -e ${evt/evid} -S ${evt/pdServiceKey}
 
-You can find an example daemon control script in daemons/zenexample. For most
-purposes this file can be renamed to the name of the daemon you want to create
-and modified to change the DAEMON_NAME. No other modifications are typically
-needed. Note that this example control script does expect to launch the real
-daemon code which should be located at ../DAEMON_NAME.py.
+which creates the Pagerduty Incident with the provided arguments.
 
-#### datasources/
-Any new datasource types you want to add must be added as classes into the
-datasources/ subdirectory. When Zenoss is building the list of available
-datasources it will scan the datasources/ subdirectory for all installed
-ZenPacks.
+SYNCHRONIZING SERVICE:
 
-An example datasource at datasources/ExampleDataSource.py.example.
+This ZenPack provides a service daemon called "zenpdsync" which periodically (default 60 seconds) pulls the last N ('eventsBuffer' option default 20) events from both Zenoss and Pagerduty.  It
+correlates these into pairs and determines which was last updated.  If the status of one of the pair differs from the other, then the most recently updated one's status is
+copied to the other.  Relevant Pagerduty incident log details are also copied to the Zenoss console.
 
-#### lib/
-The lib/ directory should be the installation target for any third-party
-libraries that are built by the GNUmakefile. It can also be used as the
-conventional location to drop Python-only libraries that don't require
-any compilation or special installation.
+ZPROPERTIES PROVIDED:
 
-#### libexec/
-Any scripts executed by COMMAND datasources in your ZenPack go in this
-directory by convention. When the ZenPack is installed all files in this
-directory will be made executable.
+	zPDZenossServer:  hostname of zenoss server
+	zPDZenossUser:  zenoss user allowed to query events
+	zPDZenossPass:  password for zenoss user
+	zPDDomain:  YOURNAMEHERE.pagerduty.com
+	zPDToken:  Token key needed for API calls
+	zPDUser:  Pagerduty user used for automatic updates (this will show in the console, I use a fake user called "Zenoss")
+	zPDServiceKey:  optional per-device service key (would need to be assigned in transform if used, however)
+	
+COMPONENTS:
 
-#### migrate/
-ZenPacks can include migrate scripts that allow you to run custom code to
-handle any tasks that are needed to upgrade your ZenPack from one version to
-another. All .py files in this migrate/ subdirectory will be evaluated when the
-ZenPack is installed.
+The ZenPack has the following objects:
+	
+	An example notification (Zenoss 4.x)
+	An example event command (Zenoss 3.x)
+	
+INSTALLATION:
 
-You can find an example migrate script at migrate/ExampleMigration.py.
+It is recommended to run the "zenpdsync" from only one hub or collector, since the process does not need to be run multiple times for a single Zenoss installation.
+This means disabling the "zenpdsync" daemon on all but one of the hub/collectors.
 
-#### modeler/
-Any modeler plugins distributed with your ZenPack must be located under the
-plugins/ subdirectory. The directory structure and filenames under plugins/
-map directly to the plugins' name in the user interface. For example, if you
-wanted to create a modeler plugin called "community.snmp.ExampleMap" you would
-create the following directory structure.
+Be sure also to set defaults for the zProperties, as well as creating an event transform under the root class similar to the sample above.  The bare minimum event 
+transform would be:
 
-It is recommended that the first portion of the namespace be a short lowercase
-form of your name, or organization's name. Alternatively you can choose to use
-"community" if you plan to publish the ZenPack and are open to outside
-contributions. Zenoss, Inc. will always use "zenoss." The second portion of the
-namespace can be the protocol that is used to collect the data. If you are not
-using a common protocol it is acceptable to skip the second portion of the
-namespace and have something like "community.MongoDB" instead.
+try:
+	evt.pdServiceKey = device.zPDServiceKey
+except:
+	evt.pdServiceKey = 'YOURSERVICEKEY'
 
-plugins/
-    __init__.py
-    community/
-        __init__.py
-        snmp/
-            __init__.py
-            ExampleMap.py
+A transform has not been provided, as the author has encountered complications in the past related to event classes (they get removed if the Zenpack is uninstalled).
 
-Note that the __init__.py files must exist and should be empty files. Otherwise
-your modeler plugins won't be imported and usable within Zenoss.
+REQUIREMENTS:
 
-#### objects/
-All .xml files in this objects/ directory will be loaded into the object
-database when the ZenPack installs. All of the objects defined in the XML files
-will be automatically associated with the ZenPack.
+    Zenoss Versions Supported: 3.x, 4.x
+    External Dependencies: None
+    ZenPack Dependencies:
+    Installation Notes: zenoss restart after installing thisZenPack.
 
-When you export the ZenPack from the user interface all objects associated with
-the ZenPack will be exported into a file called "objects.xml" specifically. For
-this reason it is recommended to let Zenoss manage the objects.xml file and to
-never manually create or modify any .xml files in this directory unless you
-know what you're doing.
+HISTORY:
 
-When a ZenPack is removed, any objects associated with the ZenPack will be
-recursively removed from Zenoss. For example, if you associated the /Server
-device class with your ZenPack and removed the ZenPack, the /Server device
-class, and all devices within it would also be deleted.
+Change History:
 
-When a ZenPack is upgraded, or re-installed on top of itself, all objects in
-the XML files are overlaid on the existing object database. This results in a
-merge of the existing objects and what are defined in the XML files with the
-XML file properties and relationships winning any conflicts.
+    1.0 initial release
 
-#### reports/
-Custom reports will be loaded from this directory when the ZenPack is
-installed. Subdirectories (with the exception of plugins/) will be mapped
-directly to the report folders in the web interface. So if you add a .rpt file
-into a subdirectory named "Performance Reports" you will find your report in
-the Performance Reports folder in the web interface after installing the
-ZenPack.
+Tested
+======
+This ZenPack was tested with versions 3.2.1, 4.2.3
 
-The plugins/ subdirectory should include any Python plugins your custom reports
-call. So if your .rpt file contains a line such as the following..
+Source:
+https://github.com/j053ph4/ZenPacks.community.PagerDuty
 
-objects python:here.ReportServer.plugin('myplugin', tableState);
-
-There should be a corresponding myplugin.py file in the plugins/ subdirectory.
-
-You can find an example report at Example Reports/Example Report.rpt.example
-that uses a plugin which can be found at plugins/example_plugin.py.
-
-#### services/
-ZenHub services will be loaded from the services/ directory. These services
-run inside the zenhub daemon and are responsible from all interaction with
-collector daemons.
-
-You can find an example service at services/ExampleConfigService.py.
-
-#### tests/
-All unit tests for your ZenPack should live in this directory. You can find an
-example test suite at tests/testExample.py.
+Known issues:  
