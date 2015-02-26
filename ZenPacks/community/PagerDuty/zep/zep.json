@@ -1,0 +1,9 @@
+{
+    "EventDetailItem" : [
+        {
+            "name" : "PagerDuty Key",
+            "key" : "pdServiceKey",
+            "type" : 1
+        }
+    ]
+}

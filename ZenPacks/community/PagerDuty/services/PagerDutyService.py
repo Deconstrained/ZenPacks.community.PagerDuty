@@ -24,30 +24,26 @@ class PagerDutyService(CollectorConfigService):
                                  'zPDUser',
                                  )
         CollectorConfigService.__init__(self, dmd, instance, deviceProxyAttributes)
-        
     
     def _filterDevice(self, device):
+        ''''''
         use = False
         #log.debug("examining device %s" % device)
         filter = CollectorConfigService._filterDevice(self, device)
-        
-        dataset = {
-                   'zenserver' : device.zPDZenossServer,
-                   'zenuser' : device.zPDZenossUser,
-                   'zenpass': device.zPDZenossPass,
-                   'pddomain' : device.zPDDomain,
-                   'pdtoken' : device.zPDToken,
-                   'pduser': device.zPDUser,
-                   }
-        if dataset not in self.uniqs and device.productionState == 1000:
-            self.uniqs.append(dataset)
-            log.debug("found device %s" % device)
-            return filter
-
+        dataset = (device.zPDZenossServer, device.zPDZenossUser, device.zPDZenossPass,
+                   device.zPDDomain, device.zPDToken, device.zPDUser)
+        # device has to be monitored and available
+        if device.productionState > -1 and device.getStatus() == 0:
+            if dataset not in self.uniqs: 
+                self.uniqs.append(dataset)
+                log.info("Pagerduty found device %s" % device.id)
+                return True
+        return False
+    
     def _createDeviceProxy(self, device):
         proxy = CollectorConfigService._createDeviceProxy(self, device)
-        log.debug("creating proxy for device %s" % device.id)
-        proxy.configCycleInterval = 30
+        log.debug("creating Pagerduty proxy for device %s" % device.id)
+        proxy.configCycleInterval = 120
         proxy.device = device.id
         proxy.zenhost = device.zPDZenossServer
         proxy.zenuser = device.zPDZenossUser
@@ -64,4 +60,4 @@ if __name__ == '__main__':
         print config.datapoints
     tester.printDeviceProxy = printer
     tester.showDeviceInfo()
-    
+

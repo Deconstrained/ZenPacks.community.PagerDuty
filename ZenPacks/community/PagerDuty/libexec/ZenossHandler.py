@@ -3,9 +3,10 @@ from HTTPHandler import *
 class ZenossHandler():
     """
     """
-    def __init__(self,host,username,password,verbose=False):
+    def __init__(self, host, username, password, verbose=False):
         """
         """
+        self.verbose = verbose
         self.routers = {
                         'MessagingRouter': 'messaging',
                         'EventsRouter': 'evconsole',
@@ -50,58 +51,49 @@ class ZenossHandler():
         self.http.transact(data)
         return self.http.response
         
-    def getEvents(self,history=False):
+    def getEvents(self, history=False, open=False):
         """
             retrieve current console events
         """
+        if self.verbose is True: print "Getting list of console events with history: %s and open: %s" % (history, open)
         data = dict(start=0, limit=self.buffersize, dir='DESC', sort='lastTime')
-        if history == True:
-            data['history'] = True
-        #data['params'] = dict(severity=[5,4,3,2,1,0])
+        # get results from history
+        if history is True: data['history'] = True
+        # only get open events
+        if open is True: data['params'] = dict(eventState=[0,1], severity=[5,4,3])
+        else: data['params'] = dict(severity=[5,4,3,0])
         return self.request('EventsRouter','query',[data])["result"]
     
-    def manageEventStatus(self,evids=[],action="acknowledge"):
+    def manageEventStatus(self, evids=[], action="acknowledge"):
         """
             manage event status
             action = [acknowledge|close]
         """
+        if self.verbose is True: print "Changing event status to %s for evids: %s" % (action, ', '.join(evids))
         data = [{"evids": evids}]
         return self.request('EventsRouter',action,data)
     
-    def addEventMessage(self,evid,message):
+    def addEventMessage(self, evid, message):
         """
             manage event open/close/acknowledge status
         """
+        if self.verbose is True: print 'Adding message: "%s" to event: %s' % (message, evid)
         data = {
                 'evid': evid,
                 'message':message
                 }
         return self.request('EventsRouter','write_log',[data])
       
-    def getEventDetails(self,evid,history=False):
+    def getEventDetails(self, evid, history=False):
         """
             manage event open/close/acknowledge status
         """
+        if self.verbose is True: print "Getting event details for %s with history: %s" % (evid, history)
         data = {
                 'evid': evid,
                 }
         if history == True:
             data['history'] = 'True'
         return self.request('EventsRouter','detail',[data])
-    
-    def addLocation(self,path,id,description=None,address=None):
-        """
-            manage event open/close/acknowledge status
-        """
-        data = {
-                'type': 'organizer',
-                'contextUid:': path,
-                'id': id,
-                'description': description,
-                'address': address,
-                }
-        print "data",data
-        return self.request('DeviceRouter','addLocationNode',[data])
-      
-    
+
 
