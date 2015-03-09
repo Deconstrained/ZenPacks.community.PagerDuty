@@ -181,11 +181,23 @@ class Sync():
     
     def getPDIncident(self, evid):
         ''''''
+        incident = None
         output = self.pagerduty.getIncidentByKey(evid)
-        if 'incidents' not in output.keys(): return None
-        if len(output['incidents']) != 1: return None
-        self.addStatusDictEntry(evid, output['incidents'][0], True)
-        return output['incidents'][0]
+        #if 'incidents' not in output.keys(): return incident
+        if 'incidents' in output.keys():
+            count = len(output['incidents'])
+            # if more than one, take the most recent
+            if count >= 1:
+                max = 0
+                for i in output['incidents']:
+                    pagerdutytime = i["last_status_change_on"]
+                    pagerdutytime_local = self.messenger.getPagerDutyTime(pagerdutytime)
+                    pagerdutytimestamp = self.messenger.getTimestamp(pagerdutytime_local)
+                    if pagerdutytimestamp > max:
+                        incident = i
+                        max = pagerdutytimestamp
+        if incident is not None: self.addStatusDictEntry(evid, incident, True)
+        return incident
     
     def getZenEventDict(self, evid):
         '''
